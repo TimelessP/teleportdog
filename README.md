@@ -46,9 +46,9 @@ teleportdog is not a direct copy of any of the above. It combines ideas and adds
 
 ## Architecture Snapshot
 
-- `teleportdog/lm.py`: tiny char n-gram model (small, local, inspectable).
+- `teleportdog/lm.py`: tiny subword n-gram model (small, local, inspectable; legacy char states still load).
 - `teleportdog/t9.py`: T9 encoder/index/suggester and phrase decoding.
-- `teleportdog/chat.py`: session context init, intent routing, retrieval, learning, persistence.
+- `teleportdog/chat.py`: session context init, intent routing, hybrid retrieval (BM25-style lexical ranking + random indexing + query hints), tiny response planner, grounded generation, constrained decoding, learning, persistence.
 - `teleportdog/cli.py`: interactive chat loop and commands.
 - `teleportdog/data/bootstrap_corpus.txt`: bootstrap local corpus.
 
@@ -115,6 +115,7 @@ Run the bundled demo flow:
 - During chat, both your messages and assistant replies are learned incrementally.
 - T9 dictionary is built from the corpus and updated with conversation words.
 - Once installed, operation is fully local and does not require internet access.
+- Retrieval is zero-dependency but stronger than raw keyword overlap: it combines lexical ranking with lightweight random-indexing similarity and a few built-in paraphrase hints.
 - **Tab completion**: if readline is available on your OS, you can press Tab to autocomplete commands. Type `/` followed by a few letters and press Tab to see matching commands.
 
 ## Corpus Expansion Guide

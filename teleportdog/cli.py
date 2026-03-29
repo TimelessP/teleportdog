@@ -14,23 +14,25 @@ except ImportError:  # pragma: no cover
 # Set up tab completion for readline if available
 if readline:
     _COMMANDS = ['/help', '/mode', '/gen', '/learnglob', '/suggest', '/learn', '/save', '/quit', '/exit']
+    _candidates: list[str] = []
 
     def _completer(text, state):
         """Readline tab completion for teleportdog commands."""
+        nonlocal_candidates = _candidates
         if state == 0:
             # First call: build the list of candidates
             if text.startswith('/'):
                 candidates = [cmd for cmd in _COMMANDS if cmd.startswith(text.lower())]
             else:
                 candidates = []
-            _completer.candidates = candidates
+            nonlocal_candidates.clear()
+            nonlocal_candidates.extend(candidates)
 
         # Return the next candidate or None if exhausted
-        if state < len(_completer.candidates):
-            return _completer.candidates[state]
+        if state < len(nonlocal_candidates):
+            return nonlocal_candidates[state]
         return None
 
-    _completer.candidates = []
     readline.set_completer(_completer)
 
 HELP_TEXT = "\n".join(

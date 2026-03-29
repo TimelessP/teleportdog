@@ -1,6 +1,7 @@
 ---
-title: teleportdog — Copilot instructions for contribute
-contributors: feel free to extend this
+name: teleportdog instructions
+description: Copilot guidance for contributing to teleportdog
+applyTo: "**"
 ---
 
 # Copilot Instructions for teleportdog

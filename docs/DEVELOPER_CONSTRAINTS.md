@@ -1,51 +1,44 @@
 # Teleportdog Developer Constraints
 
-This document explains what teleportdog is doing today, where its answers come from, and what its current architecture can and cannot do.
+This document explains what teleportdog is doing today, where answers come from, and what its architecture can and cannot do.
 
 ## Short Version
 
-teleportdog is a small offline hybrid system, not a trained semantic chat model.
+teleportdog is a tiny offline hybrid assistant, not a large semantic model.
 
 Its behavior comes from three layers:
 
 1. Intent rules
 2. Retrieval from learned text
-3. Tiny character-level generation
+3. Tiny local generation (subword n-gram with constrained decoding)
 
-That means it can often avoid exact parroting, but not because it deeply understands a corpus in the way a larger trained transformer would.
+This can reduce exact parroting, but it does not provide deep reasoning.
 
 ## The Three Response Paths
 
 ## 1. Intent Rules
 
-For some common prompts, teleportdog uses direct logic in `teleportdog/chat.py`.
+For common prompts, teleportdog uses explicit logic in `teleportdog/chat.py`.
 
 Examples:
-
-- greetings
-- `what can you do`
 - `who are you`
 - `summarise`
 - simple patterned prompts like `starts with X and ends with Y`
 
-These are not generated from the corpus at runtime. They are direct code paths that return a hand-authored response or a simple constructed response.
-
-Why this exists:
-
-- it makes high-frequency interactions predictable
-- it avoids nonsense output from a tiny generator
-- it gives the system a stable baseline behavior even with little corpus data
+Why this matters:
+- makes frequent interactions predictable
+- avoids nonsense from tiny generation
+- gives stable baseline behavior even with little corpus data
 
 Constraint:
-
-- this is only as broad as the explicit logic we write
+- coverage is only as broad as the rules we write
 - phrasing variation outside these patterns may miss the intended branch
 
 ## 2. Retrieval From Learned Text
 
-When a prompt does not match a direct intent rule, teleportdog searches its learned sentence bank for overlapping keywords.
+When a prompt does not match an intent rule, teleportdog searches its sentence bank using a zero-dependency hybrid ranker.
 
-The learned sentence bank comes from:
+The sentence bank is learned from:
 
 1. built-in bootstrap corpus
 2. session context snippets
@@ -53,212 +46,138 @@ The learned sentence bank comes from:
 4. prior conversation turns
 
 Mechanically, the system:
-
 - splits text into sentence-like chunks
-- extracts crude keywords
-- compares user keywords with sentence keywords
-- returns one or two best-matching sentences
+- filters markdown and metadata-like noise
+- extracts keyword terms
+- scores sentences with BM25-style lexical ranking
+- adds lightweight random-indexing similarity
+- expands a small set of paraphrase-like query hints such as `without internet -> offline`
+- returns one or two top sentences
 
 Why this matters:
-
-- it can answer from larger local corpora
-- it can reuse facts without quoting whole paragraphs
-- it can feel responsive and relevant with no external dependencies
+- answers can come from larger local corpora
+- facts can be reused without repeating full paragraphs
+- remains fully offline and dependency-free
 
 Constraint:
+- this is still not deep semantic understanding
+- coverage of paraphrases is limited to corpus signal plus a small built-in hint layer
+- contradictions are not resolved robustly
 
-- this is still lexical matching, not deep semantic understanding
-- it is sensitive to wording differences
-- it can surface locally similar but globally wrong sentences
-- it does not resolve contradictions well
+## 3. Tiny Local Generation
 
-## 3. Tiny Character-Level Generation
+teleportdog includes a tiny n-gram model in `teleportdog/lm.py`.
 
-teleportdog also contains a small character n-gram language model in `teleportdog/lm.py`.
-
-This model can produce novel strings in the narrow sense that the exact output may not appear in the training data. It learns short-range character patterns, not world models or reasoning.
+Current generator behavior:
+- subword-token n-grams (legacy char state remains loadable)
+- tiny response planner chooses style and strictness
+- adaptive grounding chooses a small number of supporting snippets
+- constrained decoding rejects repetitive or markup-like output
+- quality and relevance scoring select the best candidate
+- stable fallback path is used when confidence is low
 
 Why it exists:
-
-- it preserves some of the original microgpt spirit
-- it is local, inspectable, dependency-free, and educational
-- it allows experimentation with true generation, even at tiny scale
+- preserves local-first, inspectable generation
+- enables practical experimentation in very small code
+- keeps runtime simple and fast
 
 Constraint:
+- coherence is improved but still shallow on complex prompts
+- factual synthesis remains limited
+- longer reasoning chains are weak compared to larger models
 
-- output quality is weak for general chat
-- it tends to stitch fragments together
-- it drifts easily
-- it is not a reliable summarizer or reasoning engine
+## What "Not Parroting" Means Here
 
-In the current implementation, this generator is no longer the primary reply path for common chat behavior because the results were too noisy.
-
-It is now explicitly exposed for experimentation via:
-
-- `/mode gen` (continuous generative chat mode)
-- `/gen <text>` (one-shot generative reply)
-
-So the generative path is reachable on demand, but still intentionally not the default path.
-
-Current gen-mode safeguards:
-
-- lower default sampling temperature (less randomness)
-- multi-candidate generation with heuristic quality scoring
-- automatic fallback to the stable reply path when generation quality is too low
-
-## What “Not Parroting” Means Here
-
-There are several different meanings of "not parroting":
+There are several meanings of "not parroting":
 
 ## Exact non-repetition
 
-The output is not a verbatim copy of a full corpus chunk.
+Output is not an exact copy of a corpus chunk.
 
-teleportdog can do this today.
+teleportdog can usually do this.
 
 ## Sentence recombination
 
-The output reuses one or two retrieved facts rather than echoing a paragraph exactly.
+Output reuses one or two relevant facts rather than repeating a paragraph.
 
-teleportdog can partly do this today.
+teleportdog can often do this.
 
-## Constructed replies from explicit logic
+## Rule-constructed replies
 
-The output is produced by code based on detected intent, even if the concepts originally came from corpus or session context.
+Output is created by explicit logic for known intents.
 
-teleportdog can do this today.
+teleportdog can do this well for covered cases.
 
-## Genuine semantic synthesis
+## Semantic synthesis
 
-The output integrates multiple facts into a faithful, novel explanation with reliable abstraction.
+Output merges multiple facts into faithful, novel explanation.
 
 teleportdog does not do this robustly today.
-
-That distinction is important. Some replies feel compositional because they summarize several system capabilities, but the mechanism may still be a hard-coded branch rather than learned synthesis.
 
 ## What Works Well Today
 
 teleportdog is a good fit for:
-
 - tiny offline chat experiments
 - local corpus retrieval
-- phrase-triggered assistant behavior
-- T9-assisted text entry experiments
+- practical CLI interactions
+- T9-assisted input experiments
 - personalized local state across sessions
 - educational exploration of small language systems
-
-It is especially reasonable when the desired behavior is:
-
-- local
-- inspectable
-- hackable
-- low dependency
-- good enough rather than state of the art
 
 ## What Does Not Work Well Today
 
 teleportdog is not currently strong at:
-
 - multi-step reasoning
-- grounded long-form summarization
-- contradiction detection across sources
+- deep factual synthesis
+- contradiction resolution across sources
 - robust semantic search
-- faithful abstraction across many documents
 - long coherent freeform generation
-- answering subtle paraphrases unless retrieval happens to match
-
-If you feed it a large corpus, it may become more useful as a retrieval assistant, but not automatically as a reasoning assistant.
 
 ## Corpus Size vs Capability
 
-More corpus helps, but not in a magical way.
+More corpus helps coverage, but not reasoning depth.
 
 What more corpus improves:
-
-- vocabulary coverage
-- topic coverage
+- vocabulary and topic coverage
 - retrieval hit rate
 - T9 suggestion coverage
-- domain familiarity in stored text
+- random-indexing context quality
 
 What more corpus does not automatically improve:
-
-- reasoning depth
-- semantic abstraction
+- abstraction quality
 - truthfulness under ambiguity
 - cross-document synthesis
-- conflict resolution between documents
 
-A large corpus with this architecture mostly gives you a larger memory, not a qualitatively smarter model.
+## Why The Design Is Still Valuable
 
-## Why The Current Design Is Still Valuable
-
-Despite the limits, the current design has real engineering value.
-
-It is:
-
-- fast to read
-- easy to modify
+The current design is:
+- easy to read and modify
 - fully offline after install
+- transparent about response sources
 - cheap to run
-- transparent about where outputs come from
-- a practical base for experimentation
 
-This matters because each response path is understandable and debuggable.
-
-## Where To Improve Next
-
-If you want better non-parrot behavior without giving up the local/offline spirit, the next useful improvements are:
-
-1. Better intent matching
-   - normalize paraphrases like `what are your capabilities`
-   - classify broader question families
-
-2. Better retrieval
-   - scoring beyond raw keyword overlap
-   - sentence deduplication and filtering
-   - lightweight ranking by source quality or recency
-
-3. Small compositional layer
-   - build replies from retrieved facts using templates
-   - combine multiple retrieved facts into one short answer
-   - expose which facts were used
-
-4. Better corpus shaping
-   - encourage fact-like sentence structure
-   - separate definitions, examples, and instructions
-   - reduce contradictory or noisy sources
-
-5. Optional stronger local model
-   - word-level n-grams
-   - small embedding-based retrieval
-   - compact transformer inference if dependencies and model files become acceptable
+This makes it a practical base for experimentation.
 
 ## Practical Guidance For Developers
 
-When extending teleportdog, keep these constraints in mind:
-
-- Do not assume more text alone will produce smarter answers.
-- Prefer explicit behavior for common user intents.
-- Treat retrieval as lexical unless you have upgraded the scoring mechanism.
-- Keep the system honest about uncertainty.
-- Optimize for inspectability and debuggability first.
-- Preserve offline-first behavior unless a deliberate product change is made.
+When extending teleportdog:
+- do not assume more text alone makes answers smarter
+- keep intent behavior explicit for common prompts
+- treat retrieval as lexical unless scoring is upgraded
+- keep uncertainty handling honest
+- preserve offline-first behavior unless product direction changes
 
 ## Bottom Line
 
-teleportdog is currently a tiny hybrid assistant:
-
-- partly hand-authored
+teleportdog is a tiny hybrid assistant:
+- partly rule-based
 - partly retrieval-based
-- partly generative in a very small-scale sense
+- partly generative at small scale
 
-It can be useful and interesting without being a full language model in the modern sense.
-
-That is the core constraint, and also the core charm.
+It is intentionally simple, inspectable, and local-first.
 
 ## CLI Ergonomics
 
-- On platforms where Python `readline` is available, teleportdog enables line editing and history navigation in the interactive prompt (for example, up-arrow history).
-- On platforms without `readline`, teleportdog continues to run normally without interactive history/editing enhancements.
-- `/exit` is supported as an alias of `/quit`.
+- If Python `readline` is available, teleportdog supports line editing/history and command tab completion.
+- Without `readline`, teleportdog still runs normally.
+- `/exit` is supported as an alias for `/quit`.

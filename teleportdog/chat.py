@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import glob
+import hashlib
+import math
 import os
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -68,6 +71,20 @@ TEXT_FILE_SUFFIXES = {
     ".md",
     ".text",
     ".txt",
+}
+
+SEMANTIC_HINTS = {
+    "offline": {"local", "device", "internet"},
+    "internet": {"offline", "local", "device"},
+    "local": {"offline", "device", "private"},
+    "device": {"local", "offline"},
+    "chat": {"assistant", "reply", "conversation"},
+    "assistant": {"chat", "reply"},
+    "t9": {"digits", "keypad", "predictive"},
+    "digits": {"t9", "keypad", "numbers"},
+    "keypad": {"t9", "digits"},
+    "learn": {"remember", "adapt", "knowledge"},
+    "remember": {"learn", "knowledge"},
 }
 
 
@@ -203,33 +220,170 @@ def _keywords(text: str) -> set[str]:
     return {w for w in words if len(w) >= 3 and w not in STOPWORDS}
 
 
-def _top_sentences(user_text: str, bank: list[str], limit: int = 2) -> list[str]:
-    query = _keywords(user_text)
-    if not query:
-        return []
+def _ordered_keywords(text: str) -> list[str]:
+    words = re.findall(r"[a-zA-Z']+", text.lower())
+    return [w for w in words if len(w) >= 3 and w not in STOPWORDS]
 
-    scored: list[tuple[int, int, str]] = []
-    seen: set[str] = set()
+
+def _expanded_query_terms(text: str) -> list[str]:
+    terms = _ordered_keywords(text)
+    expanded = list(terms)
+    lower = text.lower()
+
+    if "without internet" in lower or "no internet" in lower or "no network" in lower:
+        expanded.extend(["offline", "local"])
+    if "on device" in lower or "on-device" in lower:
+        expanded.extend(["local", "offline"])
+
+    for term in terms:
+        expanded.extend(sorted(SEMANTIC_HINTS.get(term, set())))
+    return expanded
+
+
+def _random_index_vector(term: str, dims: int = 96, active: int = 6) -> list[float]:
+    """Deterministic sparse random-index vector for a token."""
+    digest = hashlib.sha256(term.encode("utf-8")).digest()
+    vec = [0.0] * dims
+    for i in range(active):
+        offset = i * 4
+        chunk = digest[offset : offset + 4]
+        idx = int.from_bytes(chunk[:2], "big") % dims
+        sign = 1.0 if (chunk[2] % 2 == 0) else -1.0
+        vec[idx] += sign
+    return vec
+
+
+def _vector_add_scaled(target: list[float], source: list[float], scale: float = 1.0) -> None:
+    for idx, value in enumerate(source):
+        target[idx] += value * scale
+
+
+def _vector_norm(vec: list[float]) -> float:
+    return math.sqrt(sum(v * v for v in vec))
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    left_norm = _vector_norm(left)
+    right_norm = _vector_norm(right)
+    if left_norm <= 0.0 or right_norm <= 0.0:
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    return dot / (left_norm * right_norm)
+
+
+def _build_retrieval_stats(bank: list[str]) -> tuple[list[dict[str, object]], dict[str, int], float]:
+    docs: list[dict[str, object]] = []
+    doc_freqs: dict[str, int] = {}
+    lengths: list[int] = []
     for idx, sentence in enumerate(bank):
         if not _is_usable_sentence(sentence):
             continue
         key = _normalize_sentence_key(sentence)
+        if not key:
+            continue
+        terms = _ordered_keywords(sentence)
+        if not terms:
+            continue
+        term_counts = Counter(terms)
+        lengths.append(len(terms))
+        docs.append(
+            {
+                "index": idx,
+                "sentence": sentence,
+                "key": key,
+                "terms": terms,
+                "counts": term_counts,
+            }
+        )
+        for term in set(terms):
+            doc_freqs[term] = doc_freqs.get(term, 0) + 1
+
+    avg_len = (sum(lengths) / len(lengths)) if lengths else 1.0
+    return docs, doc_freqs, avg_len
+
+
+def _bm25_score(
+    query_terms: list[str],
+    doc_counts: Counter[str],
+    doc_len: int,
+    doc_freqs: dict[str, int],
+    num_docs: int,
+    avg_len: float,
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> float:
+    score = 0.0
+    for term in query_terms:
+        tf = float(doc_counts.get(term, 0))
+        if tf <= 0.0:
+            continue
+        df = float(doc_freqs.get(term, 0))
+        idf = math.log(1.0 + ((num_docs - df + 0.5) / (df + 0.5))) if num_docs > 0 else 0.0
+        denom = tf + k1 * (1.0 - b + b * (doc_len / max(1.0, avg_len)))
+        score += idf * ((tf * (k1 + 1.0)) / max(1e-9, denom))
+    return score
+
+
+def _random_index_sentence_vector(
+    terms: list[str],
+    doc_freqs: dict[str, int],
+    num_docs: int,
+    dims: int = 96,
+) -> list[float]:
+    vec = [0.0] * dims
+    if not terms:
+        return vec
+    counts = Counter(terms)
+    for term, count in counts.items():
+        df = max(1, doc_freqs.get(term, 1))
+        idf = math.log(1.0 + (num_docs / df)) if num_docs > 0 else 0.0
+        _vector_add_scaled(vec, _random_index_vector(term, dims=dims), scale=float(count) * max(0.25, idf))
+    return vec
+
+
+def _top_sentences(user_text: str, bank: list[str], limit: int = 2) -> list[str]:
+    query_terms = _expanded_query_terms(user_text)
+    if not query_terms:
+        return []
+
+    docs, doc_freqs, avg_len = _build_retrieval_stats(bank)
+    num_docs = len(docs)
+    if num_docs == 0:
+        return []
+
+    query_vector = _random_index_sentence_vector(query_terms, doc_freqs, num_docs)
+
+    scored: list[tuple[float, float, int, str]] = []
+    seen: set[str] = set()
+    for doc in docs:
+        sentence = str(doc["sentence"])
+        key = str(doc["key"])
         if not key or key in seen:
             continue
         seen.add(key)
-        sk = _keywords(sentence)
-        if not sk:
-            continue
-        overlap = len(query & sk)
-        if overlap <= 0:
-            continue
-        # Prefer strong overlap and more recent learned sentences.
-        recency_bonus = idx
-        scored.append((overlap, recency_bonus, sentence))
 
-    scored.sort(key=lambda x: (-x[0], -x[1]))
+        terms = list(doc["terms"])
+        term_counts = doc["counts"]
+        if not terms:
+            continue
+
+        overlap = len(set(query_terms) & set(terms))
+        bm25 = _bm25_score(query_terms, term_counts, len(terms), doc_freqs, num_docs, avg_len)
+        ri = _cosine_similarity(
+            query_vector,
+            _random_index_sentence_vector(terms, doc_freqs, num_docs),
+        )
+        if overlap <= 0 and ri < 0.08:
+            continue
+
+        # Prefer hybrid lexical/latent-ish similarity and more recent learned sentences.
+        recency_bonus = int(doc["index"])
+        hybrid = (0.72 * bm25) + (0.28 * max(0.0, ri))
+        scored.append((hybrid, ri, recency_bonus, sentence))
+
+    scored.sort(key=lambda x: (-x[0], -x[1], -x[2]))
     out: list[str] = []
-    for _, _, s in scored:
+    for _, _, _, s in scored:
         if not out:
             out.append(s)
         else:
@@ -302,6 +456,119 @@ def _looks_like_markup_or_link_noise(text: str) -> bool:
     return _looks_like_markupish_text(text)
 
 
+def _has_repeated_word_ngram(text: str, n: int = 3) -> bool:
+    words = re.findall(r"[a-zA-Z']+", text.lower())
+    if len(words) < n * 2:
+        return False
+    seen: set[tuple[str, ...]] = set()
+    for i in range(0, len(words) - n + 1):
+        gram = tuple(words[i : i + n])
+        if gram in seen:
+            return True
+        seen.add(gram)
+    return False
+
+
+def _plan_generation(user_text: str) -> dict[str, object]:
+    """Tiny rule planner for answer shape, grounding, and decoding strictness."""
+    lower = user_text.lower().strip()
+    asks_definition = bool(re.search(r"^(who|what)\s+is\b", lower))
+    asks_how = lower.startswith("how ") or " how " in lower
+    casual = lower in {"hi", "hello", "hey", "yo"} or lower.startswith("hello ")
+
+    if casual:
+        return {
+            "style": "casual",
+            "grounding_limit": 0,
+            "grounding_char_budget": 0,
+            "max_sentences": 1,
+            "temperature": 0.62,
+            "strictness": "medium",
+        }
+
+    if asks_definition:
+        return {
+            "style": "definition",
+            "grounding_limit": 1,
+            "grounding_char_budget": 180,
+            "max_sentences": 2,
+            "temperature": 0.48,
+            "strictness": "high",
+        }
+
+    if asks_how:
+        return {
+            "style": "practical",
+            "grounding_limit": 2,
+            "grounding_char_budget": 220,
+            "max_sentences": 2,
+            "temperature": 0.52,
+            "strictness": "high",
+        }
+
+    return {
+        "style": "default",
+        "grounding_limit": 1,
+        "grounding_char_budget": 160,
+        "max_sentences": 2,
+        "temperature": 0.55,
+        "strictness": "medium",
+    }
+
+
+def _select_grounding_snippets(
+    user_text: str,
+    bank: list[str],
+    limit: int,
+    char_budget: int,
+) -> list[str]:
+    if limit <= 0 or char_budget <= 0:
+        return []
+
+    ranked = _top_sentences(user_text, bank, limit=max(3, limit * 2))
+    out: list[str] = []
+    used = 0
+    for sentence in ranked:
+        if not sentence:
+            continue
+        length = len(sentence)
+        if length > char_budget:
+            continue
+        if used + length > char_budget:
+            continue
+        out.append(sentence)
+        used += length
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _passes_decode_constraints(text: str, strictness: str, max_sentences: int) -> bool:
+    if not text:
+        return False
+    if _looks_like_markup_or_link_noise(text):
+        return False
+    if _looks_like_structured_metadata(text):
+        return False
+    if _has_repeated_word_ngram(text, n=3):
+        return False
+
+    # Avoid multi-sentence drift in tiny model outputs.
+    sentence_count = len(re.findall(r"[.!?]", text))
+    if sentence_count > max(1, max_sentences):
+        return False
+
+    if strictness == "high":
+        if re.search(r"[0-9]{3,}", text):
+            return False
+        if re.search(r"[^\w\s.,!?':;\"\-()]", text):
+            return False
+        if len(text) < 20:
+            return False
+
+    return True
+
+
 @dataclass
 class TeleportDog:
     model: CharNGramLM = field(default_factory=lambda: CharNGramLM(order=5, seed=42))
@@ -350,12 +617,27 @@ class TeleportDog:
         self.t9.learn_text(text)
         self.knowledge.extend(_split_sentences(text))
 
-    def _build_prompt(self, user_text: str) -> str:
+    def _build_prompt(
+        self,
+        user_text: str,
+        grounding: list[str] | None = None,
+        style: str = "default",
+    ) -> str:
         turns = self.history[-6:]
         parts = [
             "system: You are teleportdog, a tiny local offline chat assistant.",
             "system: Keep replies concise, friendly, and practical.",
         ]
+        if style == "definition":
+            parts.append("system: Prefer direct factual phrasing in 1-2 short sentences.")
+        elif style == "practical":
+            parts.append("system: Prefer practical steps and concrete language.")
+        elif style == "casual":
+            parts.append("system: Keep it light and conversational.")
+
+        for fact in grounding or []:
+            parts.append(f"context: {fact}")
+
         for u, a in turns:
             parts.append(f"user: {u}")
             parts.append(f"assistant: {a}")
@@ -372,18 +654,38 @@ class TeleportDog:
         min_quality: float = 0.58,
     ) -> str:
         """Generate a reply directly from the tiny local char model."""
-        prompt = self._build_prompt(user_text)
+        plan = _plan_generation(user_text)
+        grounding = _select_grounding_snippets(
+            user_text,
+            self.knowledge,
+            limit=int(plan["grounding_limit"]),
+            char_budget=int(plan["grounding_char_budget"]),
+        )
+        plan_temperature = float(plan["temperature"])
+        prompt = self._build_prompt(user_text, grounding=grounding, style=str(plan["style"]))
         candidates: list[tuple[float, float, str]] = []
         for _ in range(max(1, num_candidates)):
             generated = self.model.generate(
                 prompt=prompt,
                 max_new_chars=max_new_chars,
-                temperature=temperature,
+                temperature=min(temperature, plan_temperature),
             )
             text = _clean_generated(generated)
             if "assistant:" in text:
                 text = text.split("assistant:", 1)[-1].strip()
             text = re.split(r"\buser:\b|\bsystem:\b", text)[0].strip()
+            if text.lower().startswith("context:"):
+                text = text.split(":", 1)[-1].strip()
+
+            max_sentences = int(plan["max_sentences"])
+            strictness = str(plan["strictness"])
+            if not _passes_decode_constraints(text, strictness=strictness, max_sentences=max_sentences):
+                # Keep in the candidate pool but heavily penalize low-quality constrained failures.
+                text = text.strip()
+                penalty = 0.4
+            else:
+                penalty = 0.0
+
             quality = _gen_quality_score(text)
             relevance = _gen_relevance_score(user_text, text)
 
@@ -391,6 +693,13 @@ class TeleportDog:
             blended = (0.65 * quality) + (0.35 * relevance)
             if _looks_like_markup_or_link_noise(text):
                 blended -= 0.35
+            blended -= penalty
+
+            # Lightweight bonus when grounded snippets share vocabulary with the candidate.
+            if grounding:
+                grounding_overlap = len(_keywords(" ".join(grounding)) & _keywords(text))
+                if grounding_overlap > 0:
+                    blended += min(0.08, grounding_overlap * 0.02)
 
             candidates.append((max(0.0, min(1.0, blended)), relevance, text))
 

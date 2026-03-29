@@ -1,0 +1,22 @@
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local app state
+.teleportdog*.json
+
+# Tooling cache
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# Editor noise
+.DS_Store

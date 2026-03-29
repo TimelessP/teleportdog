@@ -1,0 +1,384 @@
+{
+  "title": "Forest Trade",
+  "intro": "You are on a forest path. Rumor says a trader in the market will sell a secret map for one gold coin.",
+  "player": {
+    "location": "forest_path",
+    "inventory": ["axe"],
+    "gold": 0
+  },
+  "global_interactions": [
+    {
+      "id": "look",
+      "phrases": [
+        "look",
+        "look around",
+        "survey area",
+        "where am i"
+      ],
+      "response": "You take a careful look around.",
+      "requires": [],
+      "effects": []
+    },
+    {
+      "id": "inventory",
+      "phrases": [
+        "inventory",
+        "check inventory",
+        "what am i carrying",
+        "show my items"
+      ],
+      "response": "You check what you are carrying.",
+      "requires": [],
+      "effects": []
+    },
+    {
+      "id": "help",
+      "phrases": [
+        "help",
+        "what can i do",
+        "commands",
+        "i am stuck"
+      ],
+      "response": "Try movement like 'go east', inspection like 'look at the axe', and trade verbs like 'offer wood to traveller'.",
+      "requires": [],
+      "effects": []
+    },
+    {
+      "id": "inspect_axe",
+      "phrases": [
+        "look at the axe",
+        "inspect axe",
+        "examine axe",
+        "consider the axe's features carefully"
+      ],
+      "response": "Your axe is sturdy enough to split logs at the woodpile.",
+      "requires": [
+        "has:player.inventory:axe"
+      ],
+      "effects": []
+    },
+    {
+      "id": "inspect_firewood",
+      "phrases": [
+        "look at firewood",
+        "inspect firewood",
+        "examine wood bundle"
+      ],
+      "response": "A bundle of firewood. The trader in the market might buy it.",
+      "requires": [
+        "has:player.inventory:firewood"
+      ],
+      "effects": []
+    },
+    {
+      "id": "inspect_secret_map",
+      "phrases": [
+        "look at secret map",
+        "inspect map",
+        "examine secret map"
+      ],
+      "response": "The secret map is marked with a hidden route through the forest.",
+      "requires": [
+        "has:player.inventory:secret_map"
+      ],
+      "effects": []
+    },
+    {
+      "id": "inspect_exits",
+      "phrases": [
+        "check exits",
+        "where can i go",
+        "list exits"
+      ],
+      "response": "You study the nearby exits.",
+      "requires": [],
+      "effects": []
+    },
+    {
+      "id": "woodpile_hint",
+      "phrases": [
+        "wield the axe to chop some wood",
+        "chop some wood",
+        "use the axe",
+        "use axe",
+        "get wood",
+        "punch wood",
+        "look at the woodpile"
+      ],
+      "response": "You need to be at the woodpile first. From the forest glade, go east.",
+      "requires": [
+        "eq:player.location:forest_glade"
+      ],
+      "effects": []
+    },
+    {
+      "id": "market_banter",
+      "phrases": [
+        "hello trader",
+        "talk to trader",
+        "greet trader"
+      ],
+      "response": "The traveller gives a polite nod.",
+      "requires": [
+        "eq:player.location:market"
+      ],
+      "effects": []
+    }
+  ],
+  "item_rules": [
+    {
+      "type": "toggle",
+      "item": "lantern",
+      "holder_path": "player.inventory",
+      "state_path": "world.item_states.lantern.is_on",
+      "on_phrases": [
+        "turn on lantern",
+        "switch on lantern",
+        "light lantern"
+      ],
+      "off_phrases": [
+        "turn off lantern",
+        "turn lantern off",
+        "switch off lantern",
+        "switch lantern off",
+        "extinguish lantern"
+      ],
+      "unavailable_phrases": [
+        "turn on lantern",
+        "turn lantern on",
+        "switch on lantern",
+        "switch lantern on",
+        "light lantern",
+        "turn off lantern",
+        "turn lantern off",
+        "switch off lantern",
+        "switch lantern off",
+        "extinguish lantern"
+      ],
+      "unavailable_response": "You need to pick up the lantern first.",
+      "on_response": "You turn on the lantern. Warm light pushes back the gloom.",
+      "off_response": "You turn off the lantern. Shadows gather again.",
+      "requires": []
+    },
+    {
+      "type": "transform",
+      "from": "raw_fish",
+      "to": "cooked_fish",
+      "source_path": "player.inventory",
+      "target_path": "player.inventory",
+      "phrases": [
+        "cook fish",
+        "cook the fish",
+        "prepare fish"
+      ],
+      "response": "You cook the fish over the cabin fire.",
+      "already_done_response": "The fish is already cooked. You cannot uncook it.",
+      "requires": [
+        "eq:player.location:forest_cabin"
+      ],
+      "consume_source": true,
+      "add_target": true,
+      "effects": []
+    }
+  ],
+  "item_descriptions": {
+    "axe": "Your axe is sturdy enough to split logs at the woodpile.",
+    "lantern": "A brass lantern with a glass chamber and a small fuel wick.",
+    "raw_fish": "A fresh fish. It should be cooked before eating.",
+    "cooked_fish": "A cooked fish, warm and ready to eat.",
+    "secret_map": "The secret map is marked with a hidden route through the forest.",
+    "firewood": "A bundle of firewood. The trader in the market might buy it.",
+    "kindling": "Dry kindling. Perfect for starting a small fire."
+  },
+  "locations": [
+    {
+      "id": "forest_cabin",
+      "name": "Forest Cabin",
+      "description": "A small cabin with smoke drifting from its chimney.",
+      "items": ["lantern"],
+      "exits": [
+        {"name": "east", "to": "forest_path"}
+      ],
+      "interactions": []
+    },
+    {
+      "id": "forest_path",
+      "name": "Forest Path",
+      "description": "A winding path between pines. Tracks lead to the market.",
+      "items": [],
+      "exits": [
+        {"name": "west", "to": "forest_cabin"},
+        {"name": "north", "to": "forest_glade"},
+        {"name": "east", "to": "market"}
+      ],
+      "interactions": []
+    },
+    {
+      "id": "forest_glade",
+      "name": "Forest Glade",
+      "description": "A quiet glade, with a stacked woodpile near a stump.",
+      "items": ["raw_fish"],
+      "exits": [
+        {"name": "south", "to": "forest_path"},
+        {"name": "east", "to": "woodpile"}
+      ],
+      "interactions": []
+    },
+    {
+      "id": "woodpile",
+      "name": "Woodpile",
+      "description": "Logs are stacked high, ready for chopping.",
+      "items": ["kindling"],
+      "exits": [
+        {"name": "west", "to": "forest_glade"}
+      ],
+      "interactions": [
+        {
+          "id": "chop_wood",
+          "verb": "chop",
+          "target": "woodpile",
+          "phrases": [
+            "chop wood",
+            "cut firewood",
+            "split logs",
+            "use axe on woodpile"
+          ],
+          "response": "You chop enough firewood to trade in town.",
+          "requires": [
+            "has:player.inventory:axe",
+            "eq:world.woodpile_remaining:true"
+          ],
+          "effects": [
+            "add:player.inventory:firewood",
+            "set:world.woodpile_remaining:false"
+          ]
+        },
+        {
+          "id": "chop_wood_depleted",
+          "verb": "chop",
+          "target": "woodpile",
+          "phrases": [
+            "chop wood",
+            "cut firewood",
+            "split logs",
+            "use axe on woodpile"
+          ],
+          "response": "You already gathered the useful wood here.",
+          "requires": [
+            "has:player.inventory:axe",
+            "eq:world.woodpile_remaining:false"
+          ],
+          "effects": []
+        }
+      ]
+    },
+    {
+      "id": "market",
+      "name": "Market",
+      "description": "A busy market square. A trader watches you carefully.",
+      "items": [],
+      "exits": [
+        {"name": "west", "to": "forest_path"}
+      ],
+      "interactions": []
+    }
+  ],
+  "npcs": [
+    {
+      "id": "trader",
+      "name": "Traveller Trader",
+      "location": "market",
+      "state": {
+        "needs_wood": true,
+        "map_available": true
+      },
+      "interactions": [
+        {
+          "id": "sell_wood_to_trader",
+          "verb": "give",
+          "target": "trader",
+          "phrases": [
+            "give wood to trader",
+            "trade firewood for coin",
+            "sell firewood",
+            "offer wood to traveller",
+            "offer to sell the firewood to the trader"
+          ],
+          "response": "The trader buys your firewood and pays one gold coin.",
+          "requires": [
+            "has:player.inventory:firewood",
+            "eq:npcs.trader.state.needs_wood:true"
+          ],
+          "effects": [
+            "remove:player.inventory:firewood",
+            "inc:player.gold:1",
+            "set:npcs.trader.state.needs_wood:false"
+          ]
+        },
+        {
+          "id": "sell_axe_rejected",
+          "verb": "sell",
+          "target": "axe",
+          "phrases": [
+            "sell the axe",
+            "sell axe",
+            "offer the axe",
+            "offer axe to trader"
+          ],
+          "response": "The trader shakes his head and refuses to buy your axe.",
+          "requires": [
+            "has:player.inventory:axe",
+            "eq:player.location:market"
+          ],
+          "effects": []
+        },
+        {
+          "id": "request_map_without_gold",
+          "verb": "ask",
+          "target": "secret map",
+          "phrases": [
+            "buy secret map",
+            "pay gold for map",
+            "please accept my last gold coin for the map",
+            "purchase map from trader"
+          ],
+          "response": "The traveller says the secret map costs one gold coin.",
+          "requires": [
+            "eq:player.gold:0",
+            "eq:npcs.trader.state.map_available:true"
+          ],
+          "effects": []
+        },
+        {
+          "id": "buy_secret_map",
+          "verb": "buy",
+          "target": "secret map",
+          "phrases": [
+            "buy secret map",
+            "pay gold for map",
+            "please accept my last gold coin for the map",
+            "purchase map from trader"
+          ],
+          "response": "The traveller gives you the secret map.",
+          "requires": [
+            "gte:player.gold:1",
+            "eq:npcs.trader.state.map_available:true"
+          ],
+          "effects": [
+            "inc:player.gold:-1",
+            "add:player.inventory:secret_map",
+            "set:npcs.trader.state.map_available:false"
+          ]
+        }
+      ]
+    }
+  ],
+  "world": {
+    "woodpile_remaining": true,
+    "item_states": {
+      "lantern": {
+        "is_on": false
+      }
+    }
+  }
+}

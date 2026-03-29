@@ -22,3 +22,6 @@ assistant: Summaries should prioritize facts and practical actions.
 assistant: Offline tools are useful in low-connectivity environments.
 assistant: Learning from user text can personalize output over time.
 assistant: A tiny model can still be fun, fast, and resilient.
+
+user: give gold to traveller
+assistant: The traveller gives you the secret map.

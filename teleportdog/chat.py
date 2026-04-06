@@ -9,6 +9,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypedDict
 
 from .lm import CharNGramLM
 from .t9 import T9
@@ -86,6 +87,23 @@ SEMANTIC_HINTS = {
     "learn": {"remember", "adapt", "knowledge"},
     "remember": {"learn", "knowledge"},
 }
+
+
+class _RetrievalDoc(TypedDict):
+    index: int
+    sentence: str
+    key: str
+    terms: list[str]
+    counts: Counter[str]
+
+
+class _GenerationPlan(TypedDict):
+    style: str
+    grounding_limit: int
+    grounding_char_budget: int
+    max_sentences: int
+    temperature: float
+    strictness: str
 
 
 def _load_bootstrap_corpus() -> list[str]:
@@ -271,8 +289,8 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return dot / (left_norm * right_norm)
 
 
-def _build_retrieval_stats(bank: list[str]) -> tuple[list[dict[str, object]], dict[str, int], float]:
-    docs: list[dict[str, object]] = []
+def _build_retrieval_stats(bank: list[str]) -> tuple[list[_RetrievalDoc], dict[str, int], float]:
+    docs: list[_RetrievalDoc] = []
     doc_freqs: dict[str, int] = {}
     lengths: list[int] = []
     for idx, sentence in enumerate(bank):
@@ -469,7 +487,7 @@ def _has_repeated_word_ngram(text: str, n: int = 3) -> bool:
     return False
 
 
-def _plan_generation(user_text: str) -> dict[str, object]:
+def _plan_generation(user_text: str) -> _GenerationPlan:
     """Tiny rule planner for answer shape, grounding, and decoding strictness."""
     lower = user_text.lower().strip()
     asks_definition = bool(re.search(r"^(who|what)\s+is\b", lower))
@@ -616,6 +634,15 @@ class TeleportDog:
         self.model.learn(text)
         self.t9.learn_text(text)
         self.knowledge.extend(_split_sentences(text))
+
+    def reset_corpus(self) -> None:
+        """Clear all corpus-derived state for the current session/state file."""
+        self.model = CharNGramLM(order=self.model.order, seed=self.model.seed, unit=self.model.unit)
+        self.t9 = T9()
+        self.knowledge.clear()
+        self.history.clear()
+        self.imported_corpus_signatures.clear()
+        self.context_version = 0
 
     def _build_prompt(
         self,

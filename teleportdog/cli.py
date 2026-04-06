@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover
 
 # Set up tab completion for readline if available
 if readline:
-    _COMMANDS = ['/help', '/mode', '/gen', '/learnglob', '/suggest', '/learn', '/save', '/quit', '/exit']
+    _COMMANDS = ['/help', '/mode', '/gen', '/learnglob', '/suggest', '/learn', '/reset', '/save', '/quit', '/exit']
     _candidates: list[str] = []
 
     def _completer(text, state):
@@ -46,6 +46,7 @@ HELP_TEXT = "\n".join(
         "  /learnglob <pattern>  import corpus files now (glob/file/dir)",
         "  /suggest <digits>     show candidates for one T9 sequence",
         "  /learn <text>         feed additional text to local model",
+        "  /reset                clear learned corpus from current state and save",
         "  /save                 persist model to default state path",
         "  /save <path>          persist model to custom path",
         "  /quit                 exit",
@@ -140,6 +141,15 @@ def run_chat(state_path: Path, corpus_inputs: list[str] | None = None) -> int:
                 save_path = Path(arg).expanduser() if arg else state_path
                 bot.save(save_path)
                 print(f"teleportdog: saved to {save_path}")
+                continue
+
+            if cmd == "/reset":
+                if arg:
+                    print("teleportdog: usage /reset")
+                    continue
+                bot.reset_corpus()
+                bot.save(state_path)
+                print("teleportdog: corpus reset and state saved")
                 continue
 
             print("teleportdog: unknown command. try /help")

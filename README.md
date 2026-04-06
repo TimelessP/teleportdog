@@ -105,6 +105,7 @@ Run the bundled demo flow:
 - `/learnglob <pattern>` import extra corpus at runtime (glob/file/dir)
 - `/suggest 43556` show word candidates for one T9 sequence
 - `/learn some text` force-learn text into local model
+- `/reset` clear learned corpus from current state and save immediately
 - `/save` persist model state to `~/.teleportdog/state.json`
 - `/quit` exit
 - `/exit` exit (alias for `/quit`)
